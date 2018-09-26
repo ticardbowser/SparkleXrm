@@ -1,14 +1,15 @@
 ﻿using Microsoft.Crm.Sdk.Messages;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Client;
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 
 namespace SparkleXrm.Tasks
 {
@@ -35,7 +36,6 @@ namespace SparkleXrm.Tasks
             _ctx = context;
             _service = service;
             _trace = trace;
-          
         }
         /// <summary>
         /// If not null, components are added to this solution
@@ -65,8 +65,8 @@ namespace SparkleXrm.Tasks
                 }
             }
 
-        }
-
+        }      
+      
         private void RegisterActivities(IEnumerable<Type> pluginTypes, PluginAssembly plugin)
         {
             var sdkPluginTypes = ServiceLocator.Queries.GetPluginTypes(_ctx, plugin);
@@ -237,19 +237,18 @@ namespace SparkleXrm.Tasks
             plugin.SourceType = pluginassembly_sourcetype.Database; // database
             plugin.IsolationMode = firstTypeAttribute.IsolationMode == IsolationModeEnum.Sandbox ? pluginassembly_isolationmode.Sandbox : pluginassembly_isolationmode.None; // 1= none, 2 = sandbox
 
-            if (plugin.Id == Guid.Empty)
+            // Want to overwrite all existing plugin informaiton
+            if(plugin.Id != Guid.Empty)
             {
-                _trace.WriteLine("Registering Plugin '{0}' from '{1}'", plugin.Name, assemblyFilePath.FullName);
-                // Create
-                plugin.Id = _service.Create(plugin);
+                // Remove the existing plugin, because the schema might have changed
+                _trace.WriteLine("Removing Plugin '{0}' from '{1}'", plugin.Name, assemblyFilePath.FullName);
+                //_trace.WriteLine(PluginAssembly.EntityLogicalName);
+                DeletePluginAssembly(plugin);
             }
-            else
-            {
-                _trace.WriteLine("Updating Plugin '{0}' from '{1}'", plugin.Name, assemblyFilePath.FullName);
-                // Update
-                _service.Update(plugin);
-            }
-
+            _trace.WriteLine("Registering Plugin '{0}' from '{1}'", plugin.Name, assemblyFilePath.FullName);
+            // Create
+            plugin.Id = _service.Create(plugin);
+         
             // Add to solution
             if (SolutionUniqueName != null)
             {
@@ -258,7 +257,6 @@ namespace SparkleXrm.Tasks
             }
             return plugin;
         }
-
       
         private void RegisterPluginSteps(IEnumerable<Type> pluginTypes, PluginAssembly plugin)
         {
@@ -314,11 +312,10 @@ namespace SparkleXrm.Tasks
         {
             // Get existing Steps
             var steps =  (from s in _ctx.CreateQuery<SdkMessageProcessingStep>()
-                    where s.PluginTypeId.Id == sdkPluginType.Id
+                    where s.EventHandler.Id == sdkPluginType.Id
                     select new SdkMessageProcessingStep()
                     {
                         Id = s.Id,
-                        PluginTypeId = s.PluginTypeId,
                         SdkMessageId = s.SdkMessageId,
                         Mode = s.Mode,
                         Name = s.Name,
@@ -417,7 +414,7 @@ namespace SparkleXrm.Tasks
             else
                 supportDeployment = 0; // Server Only
             step.SupportedDeployment = (sdkmessageprocessingstep_supporteddeployment) supportDeployment;
-            step.PluginTypeId = sdkPluginType.ToEntityReference();
+            step.EventHandler = sdkPluginType.ToEntityReference();
             step.SdkMessageFilterId = sdkMessagefilterId != null ? new EntityReference(SdkMessageFilter.EntityLogicalName, sdkMessagefilterId.Value) : null;
             step.SdkMessageId = new EntityReference(SdkMessage.EntityLogicalName, sdkMessageId.Value);
             step.FilteringAttributes = pluginStep.FilteringAttributes;
@@ -445,6 +442,49 @@ namespace SparkleXrm.Tasks
                 AddStepToSolution(SolutionUniqueName, step);
 
             }
+        }
+
+        private void DeleteSdkMessageProcessingStep (SdkMessageProcessingStep step)
+        {
+            var sdkMessageProcessingStepImages = ServiceLocator.Queries.GetPluginStepImages(_ctx, step);
+            foreach (SdkMessageProcessingStepImage stepImage in sdkMessageProcessingStepImages)
+            {
+                DeleteSdkMessageProcessingStepImage(stepImage);
+            }
+            _service.Delete(SdkMessageProcessingStep.EntityLogicalName, step.Id);
+        }
+
+        private void DeleteSdkMessageProcessingStepImage(SdkMessageProcessingStepImage sdkMessageProcessingStepImage)
+        {
+            _service.Delete(SdkMessageProcessingStepImage.EntityLogicalName, sdkMessageProcessingStepImage.Id);
+        }
+
+        private void DeletePluginType (PluginType pluginType)
+        {
+            var sdkMessageProcessingSteps = ServiceLocator.Queries.GetPluginSteps(_ctx, pluginType.TypeName);
+
+            foreach(SdkMessageProcessingStep sdkmessageProcessingStep in sdkMessageProcessingSteps)
+            {
+                DeleteSdkMessageProcessingStep(sdkmessageProcessingStep);
+            }
+
+            _service.Delete(PluginType.EntityLogicalName, pluginType.Id);
+        }
+
+        private void DeletePluginAssembly (PluginAssembly plugin)
+        {
+            var sdkPluginTypes = ServiceLocator.Queries.GetPluginTypes(_ctx, plugin);
+
+            foreach(PluginType pluginType in sdkPluginTypes)
+            {
+                DeletePluginType(pluginType);
+            }
+
+            _service.Delete(PluginAssembly.EntityLogicalName, plugin.Id);
+
+            // check if any types exist
+
+
         }
 
        

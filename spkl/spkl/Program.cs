@@ -176,23 +176,16 @@ namespace SparkleXrmTask
 
                     using (var serviceProxy = new CrmServiceClient(arguments.Connection))
                     {
-                        /*if (serviceProxy.OrganizationServiceProxy == null)
-                        {
-                            throw new SparkleTaskException(SparkleTaskException.ExceptionTypes.AUTH_ERROR, String.Format("Error connecting to the Organization Service Proxy: {0}", serviceProxy.LastCrmError));
-                        }*/
-
-                        //serviceProxy.OrganizationServiceProxy.Timeout = new TimeSpan(1, 0, 0);
                         if (!serviceProxy.IsReady)
                         {
                             trace.WriteLine("Not Ready {0} {1}", serviceProxy.LastCrmError, serviceProxy.LastCrmException);
+                            throw new SparkleTaskException(SparkleTaskException.ExceptionTypes.AUTH_ERROR, String.Format("Error connecting to the Organization Service Proxy: {0}", serviceProxy.LastCrmError));
                         }
                         else
                         {
                             IOrganizationService crmService = (IOrganizationService)serviceProxy.OrganizationWebProxyClient != null ? (IOrganizationService)serviceProxy.OrganizationWebProxyClient : (IOrganizationService)serviceProxy.OrganizationServiceProxy;
                             RunTask(arguments, crmService, trace);
                         }
-
-                        
                     }
                 }
             }

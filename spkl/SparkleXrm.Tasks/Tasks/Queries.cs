@@ -14,7 +14,7 @@ namespace SparkleXrm.Tasks
         {
             return (from p in ctx.CreateQuery<PluginType>()
                     join s in ctx.CreateQuery<SdkMessageProcessingStep>()
-                    on p.PluginTypeId equals s.PluginTypeId.Id
+                    on p.PluginTypeId equals s.EventHandler.Id
                     join a in ctx.CreateQuery<PluginAssembly>()
                     on p.PluginAssemblyId.Id equals a.PluginAssemblyId
                     join m in ctx.CreateQuery<SdkMessage>()
